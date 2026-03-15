@@ -1,3 +1,5 @@
+[English](./README.md) | [中文](./README-zh.md)
+
 # OtterCode
 
 OtterCode is a local AI coding agent CLI for repository tasks. The current M1 build includes an Anthropic-based `chat` and `run` runtime, JSONL session persistence, `resume`, local task storage, skill loading, context compaction, file tools, background command support, and git worktree orchestration.
@@ -92,4 +94,5 @@ otter-code/
   pyproject.toml
   .env.example
   README.md
+  README-zh.md
 ```
