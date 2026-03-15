@@ -10,6 +10,7 @@ from ottercode.core.session import SessionStore
 from ottercode.tools.background import BackgroundManager
 from ottercode.tools.bash import run_bash
 from ottercode.tools.files import run_edit, run_read, run_write
+from ottercode.tools.permissions import PermissionManager
 from ottercode.tools.skills import SkillLoader
 from ottercode.tools.tasks import TaskManager
 from ottercode.tools.todo import TodoManager
@@ -27,6 +28,7 @@ class AgentRuntime:
         *,
         session_store: SessionStore | None = None,
         session_id: str | None = None,
+        permission_manager: PermissionManager | None = None,
     ):
         self.paths = paths
         self.paths.ensure()
@@ -38,6 +40,10 @@ class AgentRuntime:
         self.background = BackgroundManager(self.paths.workspace)
         self.session_store = session_store
         self.session_id = session_id
+        self.permissions = permission_manager or PermissionManager(
+            self.paths.logs_dir,
+            session_id=self.session_id,
+        )
 
     @property
     def system_prompt(self) -> str:
@@ -187,22 +193,17 @@ class AgentRuntime:
 
     def dispatch_tool(self, name: str, payload: dict[str, Any]) -> str:
         handlers = {
-            "bash": lambda **kw: run_bash(
-                self.paths.workspace,
-                kw["command"],
-            ),
+            "bash": lambda **kw: self.execute_bash(kw["command"]),
             "read_file": lambda **kw: run_read(
                 self.paths.workspace,
                 kw["path"],
                 kw.get("limit"),
             ),
-            "write_file": lambda **kw: run_write(
-                self.paths.workspace,
+            "write_file": lambda **kw: self.execute_write(
                 kw["path"],
                 kw["content"],
             ),
-            "edit_file": lambda **kw: run_edit(
-                self.paths.workspace,
+            "edit_file": lambda **kw: self.execute_edit(
                 kw["path"],
                 kw["old_text"],
                 kw["new_text"],
@@ -214,7 +215,7 @@ class AgentRuntime:
             ),
             "load_skill": lambda **kw: self.skills.load(kw["name"]),
             "compress": lambda **kw: "Compressing...",
-            "background_run": lambda **kw: self.background.run(
+            "background_run": lambda **kw: self.execute_background(
                 kw["command"],
                 kw.get("timeout", 120),
             ),
@@ -238,18 +239,40 @@ class AgentRuntime:
         except Exception as exc:  # pragma: no cover - tool surface formatting
             return f"Error: {exc}"
 
+    def execute_bash(self, command: str, *, timeout: int = 120) -> str:
+        allowed, message = self.permissions.authorize_shell(command)
+        if not allowed:
+            return message
+        return run_bash(self.paths.workspace, command, timeout=timeout)
+
+    def execute_background(self, command: str, timeout: int = 120) -> str:
+        allowed, message = self.permissions.authorize_shell(command, background=True)
+        if not allowed:
+            return message
+        return self.background.run(command, timeout)
+
+    def execute_write(self, path: str, content: str) -> str:
+        allowed, message = self.permissions.authorize_write(path, content)
+        if not allowed:
+            return message
+        return run_write(self.paths.workspace, path, content)
+
+    def execute_edit(self, path: str, old_text: str, new_text: str) -> str:
+        allowed, message = self.permissions.authorize_edit(path, old_text, new_text)
+        if not allowed:
+            return message
+        return run_edit(self.paths.workspace, path, old_text, new_text)
+
     def run_subagent(self, prompt: str, agent_type: str = "Explore") -> str:
         tools = self.subagent_tool_definitions(agent_type)
         handlers = {
-            "bash": lambda **kw: run_bash(self.paths.workspace, kw["command"]),
+            "bash": lambda **kw: self.execute_bash(kw["command"]),
             "read_file": lambda **kw: run_read(self.paths.workspace, kw["path"]),
-            "write_file": lambda **kw: run_write(
-                self.paths.workspace,
+            "write_file": lambda **kw: self.execute_write(
                 kw["path"],
                 kw["content"],
             ),
-            "edit_file": lambda **kw: run_edit(
-                self.paths.workspace,
+            "edit_file": lambda **kw: self.execute_edit(
                 kw["path"],
                 kw["old_text"],
                 kw["new_text"],

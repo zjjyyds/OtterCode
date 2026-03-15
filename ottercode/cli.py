@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from ottercode.config import RuntimeConfigError, resolve_paths
 from ottercode.core.runtime import AgentRuntime
 from ottercode.core.session import SessionStore, SessionStoreError
+from ottercode.tools.permissions import PermissionManager
 from ottercode.tools.tasks import TaskManager
 
 
@@ -16,12 +18,28 @@ def _add_common_workspace_arg(parser: argparse.ArgumentParser) -> None:
         default=Path.cwd(),
         help="Workspace root. Defaults to the current directory.",
     )
+    parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Auto-approve guarded shell and file write operations.",
+    )
 
 
 def _build_session_store(workspace: Path) -> SessionStore:
     paths = resolve_paths(workspace)
     paths.ensure()
     return SessionStore(paths.sessions_dir)
+
+
+def _build_permission_manager(workspace: Path, *, yes: bool, session_id: str | None) -> PermissionManager:
+    paths = resolve_paths(workspace)
+    paths.ensure()
+    return PermissionManager(
+        paths.logs_dir,
+        auto_approve=yes,
+        interactive=sys.stdin.isatty(),
+        session_id=session_id,
+    )
 
 
 def _print_recent_sessions(store: SessionStore) -> None:
@@ -38,10 +56,16 @@ def _runtime_from_workspace(
     *,
     session_store: SessionStore | None = None,
     session_id: str | None = None,
+    permission_manager: PermissionManager | None = None,
 ) -> AgentRuntime:
     paths = resolve_paths(workspace)
     paths.ensure()
-    return AgentRuntime(paths, session_store=session_store, session_id=session_id)
+    return AgentRuntime(
+        paths,
+        session_store=session_store,
+        session_id=session_id,
+        permission_manager=permission_manager,
+    )
 
 
 def _handle_chat(args: argparse.Namespace) -> int:
@@ -53,6 +77,11 @@ def _handle_chat(args: argparse.Namespace) -> int:
         args.workspace,
         session_store=store,
         session_id=session_id,
+        permission_manager=_build_permission_manager(
+            args.workspace,
+            yes=args.yes,
+            session_id=session_id,
+        ),
     )
     return runtime.chat()
 
@@ -64,6 +93,11 @@ def _handle_run(args: argparse.Namespace) -> int:
         args.workspace,
         session_store=store,
         session_id=session_id,
+        permission_manager=_build_permission_manager(
+            args.workspace,
+            yes=args.yes,
+            session_id=session_id,
+        ),
     )
     final_text, _ = runtime.run_prompt(args.prompt, verbose=True)
     if final_text:
@@ -88,6 +122,11 @@ def _handle_resume(args: argparse.Namespace) -> int:
         args.workspace,
         session_store=store,
         session_id=args.session_id,
+        permission_manager=_build_permission_manager(
+            args.workspace,
+            yes=args.yes,
+            session_id=args.session_id,
+        ),
     )
     return runtime.chat(history=history)
 

@@ -26,7 +26,9 @@ MODEL_ID=claude-sonnet-4-5
 
 ```bash
 ottercode chat
+ottercode chat --yes
 ottercode run "summarize this repository"
+ottercode run --yes "apply the requested refactor"
 ottercode tasks list
 ottercode resume sess_20260315_001_abcdef
 ottercode worktree list
@@ -38,6 +40,13 @@ ottercode worktree list
 - `chat` starts a new session and prints the generated session id
 - `run` saves the one-shot interaction as a resumable session
 - `resume` reloads the saved JSONL history and continues interactively
+
+## Permission Guard
+
+- Risky shell mutations require approval by default
+- `write_file` and `edit_file` require approval by default
+- Use `--yes` to auto-approve guarded operations
+- Approval records are appended to `.ottercode/logs/approvals.jsonl`
 
 ## Current Scope
 
@@ -61,6 +70,7 @@ otter-code/
       background.py
       bash.py
       files.py
+      permissions.py
       skills.py
       tasks.py
       todo.py
