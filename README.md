@@ -1,6 +1,6 @@
 # OtterCode
 
-OtterCode is a local AI coding agent CLI for repository tasks. The current M1 build includes an Anthropic-based `chat` and `run` runtime, JSONL session persistence, `resume`, local task storage, skill loading, context compaction, file tools, and background command support.
+OtterCode is a local AI coding agent CLI for repository tasks. The current M1 build includes an Anthropic-based `chat` and `run` runtime, JSONL session persistence, `resume`, local task storage, skill loading, context compaction, file tools, background command support, and git worktree orchestration.
 
 ## Quick Start
 
@@ -31,7 +31,12 @@ ottercode run "summarize this repository"
 ottercode run --yes "apply the requested refactor"
 ottercode tasks list
 ottercode resume sess_20260315_001_abcdef
+ottercode worktree create auth-refactor --task-id 12
 ottercode worktree list
+ottercode worktree status auth-refactor
+ottercode worktree run auth-refactor "pytest tests/auth -q" --yes
+ottercode worktree events --limit 20
+ottercode worktree remove auth-refactor --force
 ```
 
 ## Session Storage
@@ -48,12 +53,19 @@ ottercode worktree list
 - Use `--yes` to auto-approve guarded operations
 - Approval records are appended to `.ottercode/logs/approvals.jsonl`
 
+## Worktree Support
+
+- Worktree state is tracked in `.worktrees/index.json`
+- Lifecycle events are appended to `.worktrees/events.jsonl`
+- `worktree create` can bind a worktree to a task id
+- `worktree run` uses the same shell approval guard as the main runtime
+
 ## Current Scope
 
 - `chat` and `run` execute the core agent loop
 - `resume` restores saved conversation history
 - `tasks list` reads the local `.tasks/` board
-- worktree commands are still placeholders for the next milestone
+- `worktree create|list|status|run|remove|events` are implemented
 
 ## Project Layout
 
@@ -74,6 +86,9 @@ otter-code/
       skills.py
       tasks.py
       todo.py
+    worktree/
+      events.py
+      manager.py
   pyproject.toml
   .env.example
   README.md

@@ -32,6 +32,7 @@ class TaskManager:
             "description": description,
             "status": "pending",
             "owner": None,
+            "worktree": "",
             "blockedBy": [],
             "blocks": [],
         }
@@ -40,6 +41,12 @@ class TaskManager:
 
     def get(self, task_id: int) -> str:
         return json.dumps(self._load(task_id), indent=2)
+
+    def get_data(self, task_id: int) -> dict:
+        return self._load(task_id)
+
+    def exists(self, task_id: int) -> bool:
+        return self._path(task_id).exists()
 
     def update(
         self,
@@ -67,6 +74,22 @@ class TaskManager:
         self._save(task)
         return json.dumps(task, indent=2)
 
+    def bind_worktree(self, task_id: int, worktree: str, owner: str = "") -> str:
+        task = self._load(task_id)
+        task["worktree"] = worktree
+        if owner:
+            task["owner"] = owner
+        if task["status"] == "pending":
+            task["status"] = "in_progress"
+        self._save(task)
+        return json.dumps(task, indent=2)
+
+    def unbind_worktree(self, task_id: int) -> str:
+        task = self._load(task_id)
+        task["worktree"] = ""
+        self._save(task)
+        return json.dumps(task, indent=2)
+
     def list_all(self) -> str:
         tasks = [
             json.loads(file.read_text(encoding="utf-8"))
@@ -82,8 +105,9 @@ class TaskManager:
                 "completed": "[x]",
             }.get(task["status"], "[?]")
             owner = f" @{task['owner']}" if task.get("owner") else ""
+            worktree = f" wt={task['worktree']}" if task.get("worktree") else ""
             blocked = f" (blocked by: {task['blockedBy']})" if task.get("blockedBy") else ""
-            lines.append(f"{marker} #{task['id']}: {task['subject']}{owner}{blocked}")
+            lines.append(f"{marker} #{task['id']}: {task['subject']}{owner}{worktree}{blocked}")
         return "\n".join(lines)
 
     def claim(self, task_id: int, owner: str) -> str:
