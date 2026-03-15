@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ottercode.config import RuntimeConfigError, resolve_paths
 from ottercode.core.runtime import AgentRuntime
+from ottercode.core.session import SessionStore, SessionStoreError
 from ottercode.tools.tasks import TaskManager
 
 
@@ -17,22 +18,57 @@ def _add_common_workspace_arg(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def _runtime_from_args(args: argparse.Namespace) -> AgentRuntime:
-    paths = resolve_paths(args.workspace)
+def _build_session_store(workspace: Path) -> SessionStore:
+    paths = resolve_paths(workspace)
     paths.ensure()
-    return AgentRuntime(paths)
+    return SessionStore(paths.sessions_dir)
+
+
+def _print_recent_sessions(store: SessionStore) -> None:
+    recent = store.list_recent(limit=5)
+    if not recent:
+        return
+    print("Recent sessions:")
+    for item in recent:
+        print(f"  {item.session_id}  {item.preview}")
+
+
+def _runtime_from_workspace(
+    workspace: Path,
+    *,
+    session_store: SessionStore | None = None,
+    session_id: str | None = None,
+) -> AgentRuntime:
+    paths = resolve_paths(workspace)
+    paths.ensure()
+    return AgentRuntime(paths, session_store=session_store, session_id=session_id)
 
 
 def _handle_chat(args: argparse.Namespace) -> int:
-    runtime = _runtime_from_args(args)
+    store = _build_session_store(args.workspace)
+    _print_recent_sessions(store)
+    session_id = store.new_session_id()
+    print(f"Session: {session_id}")
+    runtime = _runtime_from_workspace(
+        args.workspace,
+        session_store=store,
+        session_id=session_id,
+    )
     return runtime.chat()
 
 
 def _handle_run(args: argparse.Namespace) -> int:
-    runtime = _runtime_from_args(args)
+    store = _build_session_store(args.workspace)
+    session_id = store.new_session_id()
+    runtime = _runtime_from_workspace(
+        args.workspace,
+        session_store=store,
+        session_id=session_id,
+    )
     final_text, _ = runtime.run_prompt(args.prompt, verbose=True)
     if final_text:
         print(final_text)
+    print(f"Session saved: {session_id}")
     return 0
 
 
@@ -45,12 +81,15 @@ def _handle_tasks_list(args: argparse.Namespace) -> int:
 
 
 def _handle_resume(args: argparse.Namespace) -> int:
-    paths = resolve_paths(args.workspace)
-    paths.ensure()
-    print(f"Resume scaffold for session '{args.session_id}'")
-    print(f"Sessions directory: {paths.sessions_dir}")
-    print("Session restoration is not implemented yet.")
-    return 0
+    store = _build_session_store(args.workspace)
+    history = store.load(args.session_id)
+    print(f"Resuming session: {args.session_id}")
+    runtime = _runtime_from_workspace(
+        args.workspace,
+        session_store=store,
+        session_id=args.session_id,
+    )
+    return runtime.chat(history=history)
 
 
 def _handle_worktree(args: argparse.Namespace) -> int:
@@ -104,7 +143,7 @@ def main() -> int:
     args = parser.parse_args()
     try:
         return args.func(args)
-    except RuntimeConfigError as exc:
+    except (RuntimeConfigError, SessionStoreError) as exc:
         parser.exit(status=2, message=f"Error: {exc}\n")
 
 

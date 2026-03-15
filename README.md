@@ -1,6 +1,6 @@
 # OtterCode
 
-OtterCode is a local AI coding agent CLI for repository tasks. The current M1 build includes a working Anthropic-based `chat` and `run` runtime, local task storage, skill loading, context compaction, file tools, and background command support.
+OtterCode is a local AI coding agent CLI for repository tasks. The current M1 build includes an Anthropic-based `chat` and `run` runtime, JSONL session persistence, `resume`, local task storage, skill loading, context compaction, file tools, and background command support.
 
 ## Quick Start
 
@@ -28,16 +28,23 @@ MODEL_ID=claude-sonnet-4-5
 ottercode chat
 ottercode run "summarize this repository"
 ottercode tasks list
-ottercode resume sess_20260315_001
+ottercode resume sess_20260315_001_abcdef
 ottercode worktree list
 ```
+
+## Session Storage
+
+- Sessions are saved in `.ottercode/sessions/`
+- `chat` starts a new session and prints the generated session id
+- `run` saves the one-shot interaction as a resumable session
+- `resume` reloads the saved JSONL history and continues interactively
 
 ## Current Scope
 
 - `chat` and `run` execute the core agent loop
+- `resume` restores saved conversation history
 - `tasks list` reads the local `.tasks/` board
 - worktree commands are still placeholders for the next milestone
-- session persistence and resume are not implemented yet
 
 ## Project Layout
 
@@ -49,6 +56,7 @@ otter-code/
     core/
       compact.py
       runtime.py
+      session.py
     tools/
       background.py
       bash.py

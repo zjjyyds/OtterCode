@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Any
 
 from anthropic import Anthropic
 
 from ottercode.config import AppPaths, load_model_settings
 from ottercode.core.compact import auto_compact, estimate_tokens, microcompact
+from ottercode.core.session import SessionStore
 from ottercode.tools.background import BackgroundManager
 from ottercode.tools.bash import run_bash
 from ottercode.tools.files import run_edit, run_read, run_write
@@ -22,7 +21,13 @@ MAX_MODEL_TOKENS = 8000
 
 
 class AgentRuntime:
-    def __init__(self, paths: AppPaths):
+    def __init__(
+        self,
+        paths: AppPaths,
+        *,
+        session_store: SessionStore | None = None,
+        session_id: str | None = None,
+    ):
         self.paths = paths
         self.paths.ensure()
         self.model_settings = load_model_settings(self.paths.workspace)
@@ -31,6 +36,8 @@ class AgentRuntime:
         self.skills = SkillLoader(self.paths.skills_dir)
         self.tasks = TaskManager(self.paths.tasks_dir)
         self.background = BackgroundManager(self.paths.workspace)
+        self.session_store = session_store
+        self.session_id = session_id
 
     @property
     def system_prompt(self) -> str:
@@ -43,6 +50,10 @@ class AgentRuntime:
             f"Skills:\n{self.skills.descriptions()}"
         )
 
+    def persist_session(self, messages: list[Message]) -> None:
+        if self.session_store and self.session_id:
+            self.session_store.save(self.session_id, messages)
+
     def run_prompt(
         self,
         prompt: str,
@@ -53,10 +64,12 @@ class AgentRuntime:
         messages = history if history is not None else []
         messages.append({"role": "user", "content": prompt})
         self.agent_loop(messages, verbose=verbose)
+        self.persist_session(messages)
         return self.extract_last_text(messages), messages
 
-    def chat(self) -> int:
-        history: list[Message] = []
+    def chat(self, *, history: list[Message] | None = None) -> int:
+        current_history: list[Message] = list(history) if history is not None else []
+        self.persist_session(current_history)
         while True:
             try:
                 query = input("\033[36mottercode >> \033[0m")
@@ -69,20 +82,25 @@ class AgentRuntime:
             if stripped.lower() in ("q", "exit"):
                 return 0
             if stripped == "/compact":
-                if history:
+                if current_history:
                     print("[manual compact via /compact]")
-                    history[:] = auto_compact(
-                        history,
+                    current_history[:] = auto_compact(
+                        current_history,
                         client=self.client,
                         model=self.model_settings.model_id,
                         transcripts_dir=self.paths.transcripts_dir,
                     )
+                    self.persist_session(current_history)
                 continue
             if stripped == "/tasks":
                 print(self.tasks.list_all())
                 continue
 
-            final_text, _ = self.run_prompt(stripped, history=history, verbose=True)
+            final_text, current_history = self.run_prompt(
+                stripped,
+                history=current_history,
+                verbose=True,
+            )
             if final_text:
                 print(final_text)
             print()
@@ -100,6 +118,7 @@ class AgentRuntime:
                     model=self.model_settings.model_id,
                     transcripts_dir=self.paths.transcripts_dir,
                 )
+                self.persist_session(messages)
 
             notifications = self.background.drain()
             if notifications:
@@ -153,6 +172,7 @@ class AgentRuntime:
             if self.todo.has_open_items() and rounds_without_todo >= 3:
                 results.insert(0, {"type": "text", "text": "<reminder>Update your todos.</reminder>"})
             messages.append({"role": "user", "content": results})
+            self.persist_session(messages)
 
             if manual_compact:
                 if verbose:
@@ -163,6 +183,7 @@ class AgentRuntime:
                     model=self.model_settings.model_id,
                     transcripts_dir=self.paths.transcripts_dir,
                 )
+                self.persist_session(messages)
 
     def dispatch_tool(self, name: str, payload: dict[str, Any]) -> str:
         handlers = {
