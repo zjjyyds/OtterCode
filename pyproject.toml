@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ottercode"
+version = "0.1.0"
+description = "A local AI coding agent CLI for repository tasks"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  { name = "Jay" }
+]
+dependencies = [
+  "anthropic>=0.25.0",
+  "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+ottercode = "ottercode.cli:main"
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["ottercode*"]
